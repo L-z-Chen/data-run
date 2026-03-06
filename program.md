@@ -4,24 +4,19 @@ This is an experiment to have the LLM do its own research.
 
 ## Setup
 
-Check your git state. There are two cases:
+To set up a new experiment, work with the user to:
 
-**If launched via `spawn.sh` (multi-agent):** The branch and worktree already exist. You are already on the right branch. Skip to step 3.
-
-**If launched manually (single agent):**
-
-1. **Agree on a run tag** with the human: propose a tag based on today's date (e.g. `mar5`). The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
+1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar5`). The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
 2. **Create the branch**: `git checkout -b autoresearch/<tag>` from current master.
-
-**Then, in both cases:**
-
 3. **Read the in-scope files**: The repo is small. Read these files for full context:
    - `constants.py` — fixed constants (`MAX_SEQ_LEN`, `TIME_BUDGET`, `EVAL_TOKENS`). Do not modify.
    - `prepare.py` — data prep, tokenizer, dataloader, evaluation. Do not modify.
    - `train.py` — the file you modify. Model architecture, optimizer, training loop.
 4. **Verify data exists**: Check that `~/.cache/autoresearch/` contains data shards and a tokenizer. If not, tell the human to run `uv run prepare.py`.
 5. **Initialize results.tsv**: Create `results.tsv` with header row and baseline entry. The baseline results are already known from the output format section below (val_bpb: 0.997900, peak_vram_mb: 45060.2). Do NOT re-run the baseline — just record it.
-6. **Confirm and go**: If a human is present, confirm setup looks good. If launched via `spawn.sh`, proceed directly into the autonomous experiment loop.
+6. **Confirm and go**: Confirm setup looks good.
+
+Once you get confirmation, kick off the experimentation.
 
 ## Experimentation
 
