@@ -53,7 +53,6 @@ constants.py    — fixed constants (do not modify)
 prepare.py      — data prep + runtime utilities (do not modify)
 train.py        — model, optimizer, training loop (agent modifies this)
 program.md      — agent instructions
-spawn.sh        — multi-agent launcher
 pyproject.toml  — dependencies
 ```
 
