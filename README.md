@@ -6,6 +6,8 @@ The idea: give an AI agent a small but real LLM training setup and let it run ex
 
 This particular implementation is trying to be the least fancy baseline, but it's clear how one would adjust the `program.md` file to run more sophisticated research programs with more elaborate instructions. For example, the agent can actively do little experiments on research while the job is running.
 
+The training code here is a simplified single-GPU implementation of [nanochat](https://github.com/karpathy/nanochat).
+
 ## How it works
 
 The repo is deliberately small and only has a few files:
@@ -59,3 +61,7 @@ pyproject.toml  — dependencies
 - **Fixed time budget.** Training always runs for exactly 5 minutes. This makes experiments directly comparable regardless of what the agent changes (model size, batch size, architecture, etc).
 - **BPB metric.** Bits per byte is independent of tokenizer vocabulary size, so the agent could in principle change the vocab size and still get a fair comparison.
 - **Self-contained.** No external dependencies beyond PyTorch and a few small packages. No distributed training, no complex configs. One GPU, one file, one metric.
+
+## License
+
+MIT
