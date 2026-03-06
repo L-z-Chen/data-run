@@ -8,6 +8,8 @@ This particular implementation is trying to be the least fancy baseline, but it'
 
 The training code here is a simplified single-GPU implementation of [nanochat](https://github.com/karpathy/nanochat).
 
+A bit more context on this project is here in this [tweet](https://x.com/karpathy/status/2029701092347630069). This code in particular is a simpler, more self-contained version that I thought people might like to play with.
+
 ## How it works
 
 The repo is deliberately small and only has a few files:
