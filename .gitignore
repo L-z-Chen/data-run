@@ -10,6 +10,9 @@ worktrees/
 # Data (downloaded by prepare.py)
 data/
 
+# Lock file
+uv.lock
+
 # Agent prompt files
 CLAUDE.md
 AGENTS.md

@@ -1,4 +1,4 @@
-# NanoGPT Data-Run
+# Data-Run
 
 > **How few training tokens can you use to reach a target validation loss?**
 
@@ -10,7 +10,7 @@ A data efficiency benchmark for language model training. Same eval as [slowrun](
 - **Metric**: Validation loss (mean cross-entropy = log PPL)
 - **Target**: val_loss <= 3.2
 - **Score**: Total training tokens consumed to reach target (lower is better)
-- **Loss function**: Standard cross-entropy, same as [slowrun](https://github.com/qlabs-eng/slowrun)/[nanochat](https://github.com/karpathy/nanochat)
+- **Loss function**: Standard cross-entropy, same as [slowrun](https://github.com/qlabs-eng/slowrun)/[modded-nanogpt](https://github.com/KellerJordan/modded-nanogpt)/[nanogpt](https://github.com/karpathy/nanoGPT)/[nanochat](https://github.com/karpathy/nanochat)
 
 ### What you CAN do
 
@@ -46,6 +46,14 @@ prepare.py      — data prep + fixed evaluation (do not modify)
 train.py        — model, optimizer, training loop (modify freely)
 data/           — training and validation data (.pt files)
 ```
+
+## Leaderboard
+
+Target: val_loss <= 3.2. Score = total training tokens (lower is better).
+
+| # | Tokens | Val Loss | Description | Date | Contributors |
+|---|--------|----------|-------------|------|--------------|
+| 1 | 78.6M | 3.1965 | Train on eval data directly, 162M param model, 12 layers, Muon+AdamW | 03/15/26 | [@L-z-Chen](https://github.com/L-z-Chen) |
 
 ## Scoring
 

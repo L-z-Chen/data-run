@@ -176,7 +176,7 @@ def make_dataloader(source, batch_size):
         perm = torch.randperm(n)
         for i in range(0, n - batch_size + 1, batch_size):
             batch = sequences[perm[i:i + batch_size]].cuda()
-            yield batch[:, :-1], batch[:, 1:], epoch
+            yield batch[:, :-1].contiguous(), batch[:, 1:].contiguous(), epoch
         epoch += 1
 
 
@@ -195,7 +195,7 @@ def evaluate_val_loss(model, batch_size):
     with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
         for i in range(0, n - batch_size + 1, batch_size):
             batch = sequences[i:i + batch_size].cuda()
-            x, y = batch[:, :-1], batch[:, 1:]
+            x, y = batch[:, :-1].contiguous(), batch[:, 1:].contiguous()
             logits = model(x)
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.reshape(-1),
                                    reduction='sum')

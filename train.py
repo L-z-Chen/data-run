@@ -397,7 +397,7 @@ FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 
 # Model size
 DEPTH = 12              # number of transformer layers
-DEVICE_BATCH_SIZE = 64  # per-device batch size (reduce if OOM)
+DEVICE_BATCH_SIZE = 16  # per-device batch size (reduce if OOM)
 
 # Evaluation
 EVAL_INTERVAL = 50      # evaluate val_loss every N steps
