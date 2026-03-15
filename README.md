@@ -56,11 +56,13 @@ data/           — training and validation data (.pt files)
 
 | # | Tokens | Description | Date | Script | Contributors |
 |---|--------|-------------|------|--------|--------------|
-| 1 | 5.9M | Subsample 2900 seqs from eval data, 304M params, 16 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
-| 2 | 6.0M | Subsample 2950 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
-| 3 | 6.1M | Subsample 3000 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
-| 4 | 8.2M | Subsample 4000 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
-| 5 | 10.0M | Train on full eval data (4880 seqs), 162M params, 12 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 1 | 5.8M | Subsample 2850 seqs from eval data, 834M params, 20 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 2 | 5.9M | Subsample 2875 seqs from eval data, 304M params, 16 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 3 | 5.9M | Subsample 2900 seqs from eval data, 304M params, 16 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 4 | 6.0M | Subsample 2950 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 5 | 6.1M | Subsample 3000 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 6 | 8.2M | Subsample 4000 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 7 | 10.0M | Train on full eval data (4880 seqs), 162M params, 12 layers, Muon+AdamW | 03/15/26 | [Script](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
 
 ## Scoring
 
