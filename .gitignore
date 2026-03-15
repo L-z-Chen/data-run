@@ -10,8 +10,9 @@ worktrees/
 # Data (downloaded by prepare.py)
 data/
 
-# Lock file
+# uv
 uv.lock
+pyproject.toml
 
 # Logs
 *.log
