@@ -453,7 +453,8 @@ optimizer = model.setup_optimizer(
 
 model = torch.compile(model, dynamic=False)
 
-train_loader = make_dataloader("train", DEVICE_BATCH_SIZE)
+TRAIN_DATA = os.environ.get("TRAIN_DATA", "train")
+train_loader = make_dataloader(TRAIN_DATA, DEVICE_BATCH_SIZE)
 x, y, epoch = next(train_loader)  # prefetch first batch
 
 print(f"Gradient accumulation steps: {grad_accum_steps}")

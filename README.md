@@ -8,21 +8,24 @@ A data efficiency benchmark for language model training. Same eval as [slowrun](
 
 - **Eval data**: [FineWeb](https://huggingface.co/datasets/HuggingFaceFW/fineweb) validation set (identical to [slowrun](https://github.com/qlabs-eng/slowrun), hash-verified)
 - **Metric**: Validation loss (mean cross-entropy = log PPL)
-- **Target**: val_loss <= 3.2
-- **Score**: Total training tokens consumed to reach target (lower is better)
+- **Target**: **val_loss <= 3.2**
+- **Score**: **Number of unique training tokens** used to reach the target (lower is better)
 - **Loss function**: Standard cross-entropy, same as [slowrun](https://github.com/qlabs-eng/slowrun)/[modded-nanogpt](https://github.com/KellerJordan/modded-nanogpt)/[nanogpt](https://github.com/karpathy/nanoGPT)/[nanochat](https://github.com/karpathy/nanochat)
+
+> **Note:** Training for multiple epochs does NOT increase your token count. If your dataset has 1M tokens and you train for 100 epochs, your score is still 1M. The score is purely the size of your training data.
 
 ### What you CAN do
 
 - Use **any training data**: the eval data itself, [FineWeb](https://huggingface.co/datasets/HuggingFaceFW/fineweb), third-party datasets, distilled/synthetic data
 - Modify `train.py`: model architecture, optimizer, hyperparameters, batch size, model size
 - Use any sequence length during training (the eval sequence length is fixed at 2048)
+- Train for as many epochs as you want (only unique tokens count toward your score)
 - Bring your own training data in `.pt` format (see Data Format below)
 
 ### What is FIXED
 
 - `prepare.py`: evaluation function, tokenizer ([GPT-2](https://huggingface.co/openai-community/gpt2)), eval sequence length (2048), val data
-- The evaluation metric and target loss
+- The evaluation metric and target: **val_loss <= 3.2**
 
 ## Quick start
 
@@ -49,15 +52,17 @@ data/           — training and validation data (.pt files)
 
 ## Leaderboard
 
-Target: val_loss <= 3.2. Score = total training tokens (lower is better).
+**Target: val_loss <= 3.2.** Score = unique training tokens (lower is better).
 
 | # | Tokens | Val Loss | Description | Date | Contributors |
 |---|--------|----------|-------------|------|--------------|
-| 1 | 78.6M | 3.1965 | Train on eval data directly, 162M param model, 12 layers, Muon+AdamW | 03/15/26 | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 1 | 6.1M | 3.1046 | Subsample 3000 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 2 | 8.2M | 3.0208 | Subsample 4000 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 3 | 10.0M | 3.1965 | Train on full eval data (4880 seqs), 162M params, 12 layers, Muon+AdamW | 03/15/26 | [@L-z-Chen](https://github.com/L-z-Chen) |
 
 ## Scoring
 
-Your score is the total number of training tokens consumed to reach val_loss <= 3.2. Lower is better. If the target is not reached within MAX_STEPS, the run is unscored (DNF).
+Your score is the **number of unique tokens in your training dataset** to reach **val_loss <= 3.2**. Lower is better. Training for multiple epochs is free — only the dataset size counts.
 
 ## Custom training data
 
