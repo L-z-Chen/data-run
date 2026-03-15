@@ -54,11 +54,11 @@ data/           — training and validation data (.pt files)
 
 **Target: val_loss <= 3.2.** Score = unique training tokens (lower is better).
 
-| # | Tokens | Val Loss | Description | Date | Contributors |
-|---|--------|----------|-------------|------|--------------|
-| 1 | 6.1M | 3.1046 | Subsample 3000 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [@L-z-Chen](https://github.com/L-z-Chen) |
-| 2 | 8.2M | 3.0208 | Subsample 4000 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [@L-z-Chen](https://github.com/L-z-Chen) |
-| 3 | 10.0M | 3.1965 | Train on full eval data (4880 seqs), 162M params, 12 layers, Muon+AdamW | 03/15/26 | [@L-z-Chen](https://github.com/L-z-Chen) |
+| # | Tokens | Val Loss | Description | Date | Script | Contributors |
+|---|--------|----------|-------------|------|--------|--------------|
+| 1 | 6.1M | 3.1046 | Subsample 3000 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [train.py](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 2 | 8.2M | 3.0208 | Subsample 4000 seqs from eval data, 162M params, 12 layers, Muon+AdamW | 03/15/26 | [train.py](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
+| 3 | 10.0M | 3.1965 | Train on full eval data (4880 seqs), 162M params, 12 layers, Muon+AdamW | 03/15/26 | [train.py](https://github.com/L-z-Chen/data-run/blob/892f5f2/train.py) | [@L-z-Chen](https://github.com/L-z-Chen) |
 
 ## Scoring
 
