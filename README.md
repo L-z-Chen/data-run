@@ -6,22 +6,22 @@ A data efficiency benchmark for language model training. Same eval as [slowrun](
 
 ## The competition
 
-- **Eval data**: FineWeb validation set (identical to slowrun, hash-verified)
+- **Eval data**: [FineWeb](https://huggingface.co/datasets/HuggingFaceFW/fineweb) validation set (identical to [slowrun](https://github.com/qlabs-eng/slowrun), hash-verified)
 - **Metric**: Validation loss (mean cross-entropy = log PPL)
 - **Target**: val_loss <= 3.2
 - **Score**: Total training tokens consumed to reach target (lower is better)
-- **Loss function**: Standard cross-entropy, same as slowrun/nanochat
+- **Loss function**: Standard cross-entropy, same as [slowrun](https://github.com/qlabs-eng/slowrun)/[nanochat](https://github.com/karpathy/nanochat)
 
 ### What you CAN do
 
-- Use **any training data**: the eval data itself, FineWeb, third-party datasets, distilled/synthetic data
+- Use **any training data**: the eval data itself, [FineWeb](https://huggingface.co/datasets/HuggingFaceFW/fineweb), third-party datasets, distilled/synthetic data
 - Modify `train.py`: model architecture, optimizer, hyperparameters, batch size, model size
 - Use any sequence length during training (the eval sequence length is fixed at 2048)
 - Bring your own training data in `.pt` format (see Data Format below)
 
 ### What is FIXED
 
-- `prepare.py`: evaluation function, tokenizer (GPT-2), eval sequence length (2048), val data
+- `prepare.py`: evaluation function, tokenizer ([GPT-2](https://huggingface.co/openai-community/gpt2)), eval sequence length (2048), val data
 - The evaluation metric and target loss
 
 ## Quick start
@@ -53,7 +53,7 @@ Your score is the total number of training tokens consumed to reach val_loss <= 
 
 ## Custom training data
 
-The default training data is 100M tokens from FineWeb (same as slowrun). To use custom data:
+The default training data is 100M tokens from [FineWeb](https://huggingface.co/datasets/HuggingFaceFW/fineweb) (same as [slowrun](https://github.com/qlabs-eng/slowrun)). To use custom data:
 
 1. Create a `.pt` file in the standard format (see below)
 2. In `train.py`, point the dataloader to your file:
@@ -68,7 +68,7 @@ train_loader = make_dataloader("val", DEVICE_BATCH_SIZE)
 
 ## Data format
 
-The `.pt` files store pre-tokenized sequences using the GPT-2 tokenizer (vocab size 50,257):
+The `.pt` files store pre-tokenized sequences using the [GPT-2](https://huggingface.co/openai-community/gpt2) tokenizer (vocab size 50,257):
 
 ```python
 {
