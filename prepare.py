@@ -1,389 +1,217 @@
 """
-One-time data preparation for autoresearch experiments.
-Downloads data shards and trains a BPE tokenizer.
+Data preparation and evaluation for data-run.
+
+Downloads FineWeb data (same eval set as slowrun benchmark), provides
+dataloader and fixed evaluation function.
 
 Usage:
-    python prepare.py                  # full prep (download + tokenizer)
-    python prepare.py --num-shards 8   # download only 8 shards (for testing)
+    python prepare.py                              # default: 100M train, 10M val
+    python prepare.py --train_tokens 50_000_000    # custom train size
 
-Data and tokenizer are stored in ~/.cache/autoresearch/.
+Validation data is identical to slowrun (hash-verified).
 """
 
 import os
-import sys
-import time
 import math
+import hashlib
 import argparse
-import pickle
-from multiprocessing import Pool
-
-import requests
-import pyarrow.parquet as pq
-import rustbpe
-import tiktoken
+import numpy as np
 import torch
+import torch.nn.functional as F
+import tiktoken
+from datasets import load_dataset
+from tqdm import tqdm
 
 # ---------------------------------------------------------------------------
 # Constants (fixed, do not modify)
 # ---------------------------------------------------------------------------
 
-MAX_SEQ_LEN = 2048       # context length
-TIME_BUDGET = 300        # training time budget in seconds (5 minutes)
-EVAL_TOKENS = 40 * 524288  # number of tokens for val eval
+MAX_SEQ_LEN = 2048
+SEQUENCE_SIZE = MAX_SEQ_LEN + 1
+VOCAB_SIZE = 50257  # GPT-2
+TARGET_VAL_LOSS = 3.2
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+
+EXPECTED_HASHES = {
+    "fineweb_val.pt": "80e7e430d3a7d10892c2ff32579370c5b65fbe833579d7ea5d55cbd0504c8462",
+    "fineweb_train.pt": "e7e089aedbccb6865ce76c78453fa473c823969846fccd4000f5f13aef54e70e",
+}
 
 # ---------------------------------------------------------------------------
-# Configuration
+# Data preparation
 # ---------------------------------------------------------------------------
 
-CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "autoresearch")
-DATA_DIR = os.path.join(CACHE_DIR, "data")
-TOKENIZER_DIR = os.path.join(CACHE_DIR, "tokenizer")
-BASE_URL = "https://huggingface.co/datasets/karpathy/climbmix-400b-shuffle/resolve/main"
-MAX_SHARD = 6542 # the last datashard is shard_06542.parquet
-VAL_SHARD = MAX_SHARD  # pinned validation shard (shard_06542)
-VAL_FILENAME = f"shard_{VAL_SHARD:05d}.parquet"
-VOCAB_SIZE = 8192
+def _tokenize_documents(dataset_iter, encoder, total_tokens):
+    """Tokenize documents until we have total_tokens tokens."""
+    eot = encoder._special_tokens['<|endoftext|>']
+    tokens = []
+    pbar = tqdm(total=total_tokens, unit="tok")
+    for doc in dataset_iter:
+        doc_tokens = [eot] + encoder.encode_ordinary(doc["text"])
+        tokens.extend(doc_tokens)
+        pbar.update(len(doc_tokens))
+        if len(tokens) >= total_tokens:
+            tokens = tokens[:total_tokens]
+            break
+    pbar.close()
+    return tokens
 
-# BPE split pattern (GPT-4 style, with \p{N}{1,2} instead of {1,3})
-SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,2}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
 
-SPECIAL_TOKENS = [f"<|reserved_{i}|>" for i in range(4)]
-BOS_TOKEN = "<|reserved_0|>"
+def _create_sequences(tokens):
+    """Split flat token list into fixed-size sequences."""
+    tokens = np.array(tokens, dtype=np.uint16)
+    n = len(tokens) // SEQUENCE_SIZE
+    return tokens[:n * SEQUENCE_SIZE].reshape(n, SEQUENCE_SIZE)
 
-# ---------------------------------------------------------------------------
-# Data download
-# ---------------------------------------------------------------------------
 
-def download_single_shard(index):
-    """Download one parquet shard with retries. Returns True on success."""
-    filename = f"shard_{index:05d}.parquet"
-    filepath = os.path.join(DATA_DIR, filename)
-    if os.path.exists(filepath):
+def _write_datafile(filename, sequences, batch_size=16):
+    """Write sequences to chunked .pt file (slowrun-compatible format)."""
+    seq_size = sequences.shape[1]
+    n = len(sequences)
+    full = n // batch_size
+    leftover = n % batch_size
+    chunks, valid_counts = [], []
+    for i in range(full):
+        chunk = sequences[i * batch_size:(i + 1) * batch_size].reshape(-1)
+        chunks.append(torch.from_numpy(chunk.copy()))
+        valid_counts.append(batch_size)
+    if leftover > 0:
+        pad = np.zeros((batch_size - leftover, seq_size), dtype=np.uint16)
+        padded = np.concatenate([sequences[full * batch_size:], pad]).reshape(-1)
+        chunks.append(torch.from_numpy(padded.copy()))
+        valid_counts.append(leftover)
+    torch.save({'chunks': chunks, 'valid_counts': valid_counts,
+                'batch_size': batch_size, 'sequence_size': seq_size}, filename)
+    print(f"  Wrote {len(chunks)} chunks ({n} sequences) to {filename}")
+
+
+def _sha256(filepath):
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _verify_hash(filepath):
+    basename = os.path.basename(filepath)
+    actual = _sha256(filepath)
+    expected = EXPECTED_HASHES.get(basename)
+    if expected and actual == expected:
+        print(f"  Hash OK: {basename}")
         return True
-
-    url = f"{BASE_URL}/{filename}"
-    max_attempts = 5
-    for attempt in range(1, max_attempts + 1):
-        try:
-            response = requests.get(url, stream=True, timeout=30)
-            response.raise_for_status()
-            temp_path = filepath + ".tmp"
-            with open(temp_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
-            os.rename(temp_path, filepath)
-            print(f"  Downloaded {filename}")
-            return True
-        except (requests.RequestException, IOError) as e:
-            print(f"  Attempt {attempt}/{max_attempts} failed for {filename}: {e}")
-            for path in [filepath + ".tmp", filepath]:
-                if os.path.exists(path):
-                    try:
-                        os.remove(path)
-                    except OSError:
-                        pass
-            if attempt < max_attempts:
-                time.sleep(2 ** attempt)
-    return False
+    elif expected:
+        print(f"  HASH MISMATCH: {basename}")
+        print(f"    expected: {expected}")
+        print(f"    actual:   {actual}")
+        return False
+    print(f"  Hash: {basename} = {actual}")
+    return True
 
 
-def download_data(num_shards, download_workers=8):
-    """Download training shards + pinned validation shard."""
+def prepare_data(train_tokens=100_000_000, val_tokens=10_000_000):
+    """Download FineWeb and prepare train/val splits (identical to slowrun)."""
     os.makedirs(DATA_DIR, exist_ok=True)
-    num_train = min(num_shards, MAX_SHARD)
-    ids = list(range(num_train))
-    if VAL_SHARD not in ids:
-        ids.append(VAL_SHARD)
+    encoder = tiktoken.get_encoding("gpt2")
+    val_path = os.path.join(DATA_DIR, "fineweb_val.pt")
+    train_path = os.path.join(DATA_DIR, "fineweb_train.pt")
 
-    # Count what's already downloaded
-    existing = sum(1 for i in ids if os.path.exists(os.path.join(DATA_DIR, f"shard_{i:05d}.parquet")))
-    if existing == len(ids):
-        print(f"Data: all {len(ids)} shards already downloaded at {DATA_DIR}")
+    if os.path.exists(val_path) and os.path.exists(train_path):
+        print("Data already prepared.")
+        _verify_hash(val_path)
+        _verify_hash(train_path)
         return
 
-    needed = len(ids) - existing
-    print(f"Data: downloading {needed} shards ({existing} already exist)...")
+    print(f"Streaming FineWeb (val: {val_tokens:,}, train: {train_tokens:,} tokens)...")
+    dataset = load_dataset("HuggingFaceFW/fineweb", name="sample-10BT",
+                           split="train", streaming=True)
+    it = iter(dataset)
 
-    workers = max(1, min(download_workers, needed))
-    with Pool(processes=workers) as pool:
-        results = pool.map(download_single_shard, ids)
+    # Val first (same order as slowrun for hash compatibility)
+    print("Tokenizing val...")
+    val_seqs = _create_sequences(_tokenize_documents(it, encoder, val_tokens))
+    np.random.seed(42)
+    np.random.shuffle(val_seqs)
+    _write_datafile(val_path, val_seqs)
+    _verify_hash(val_path)
 
-    ok = sum(1 for r in results if r)
-    print(f"Data: {ok}/{len(ids)} shards ready at {DATA_DIR}")
+    # Train (continues from same iterator — no document overlap with val)
+    print("Tokenizing train...")
+    train_seqs = _create_sequences(_tokenize_documents(it, encoder, train_tokens))
+    np.random.seed(43)
+    np.random.shuffle(train_seqs)
+    _write_datafile(train_path, train_seqs)
+    _verify_hash(train_path)
 
-# ---------------------------------------------------------------------------
-# Tokenizer training
-# ---------------------------------------------------------------------------
-
-def list_parquet_files():
-    """Return sorted list of parquet file paths in the data directory."""
-    files = sorted(f for f in os.listdir(DATA_DIR) if f.endswith(".parquet") and not f.endswith(".tmp"))
-    return [os.path.join(DATA_DIR, f) for f in files]
-
-
-def text_iterator(max_chars=1_000_000_000, doc_cap=10_000):
-    """Yield documents from training split (all shards except pinned val shard)."""
-    parquet_paths = [p for p in list_parquet_files() if not p.endswith(VAL_FILENAME)]
-    nchars = 0
-    for filepath in parquet_paths:
-        pf = pq.ParquetFile(filepath)
-        for rg_idx in range(pf.num_row_groups):
-            rg = pf.read_row_group(rg_idx)
-            for text in rg.column("text").to_pylist():
-                doc = text[:doc_cap] if len(text) > doc_cap else text
-                nchars += len(doc)
-                yield doc
-                if nchars >= max_chars:
-                    return
-
-
-def train_tokenizer():
-    """Train BPE tokenizer using rustbpe, save as tiktoken pickle."""
-    tokenizer_pkl = os.path.join(TOKENIZER_DIR, "tokenizer.pkl")
-    token_bytes_path = os.path.join(TOKENIZER_DIR, "token_bytes.pt")
-
-    if os.path.exists(tokenizer_pkl) and os.path.exists(token_bytes_path):
-        print(f"Tokenizer: already trained at {TOKENIZER_DIR}")
-        return
-
-    os.makedirs(TOKENIZER_DIR, exist_ok=True)
-
-    parquet_files = list_parquet_files()
-    if len(parquet_files) < 2:
-        print("Tokenizer: need at least 2 data shards (1 train + 1 val). Download more data first.")
-        sys.exit(1)
-
-    # --- Train with rustbpe ---
-    print("Tokenizer: training BPE tokenizer...")
-    t0 = time.time()
-
-    tokenizer = rustbpe.Tokenizer()
-    vocab_size_no_special = VOCAB_SIZE - len(SPECIAL_TOKENS)
-    tokenizer.train_from_iterator(text_iterator(), vocab_size_no_special, pattern=SPLIT_PATTERN)
-
-    # Build tiktoken encoding from trained merges
-    pattern = tokenizer.get_pattern()
-    mergeable_ranks = {bytes(k): v for k, v in tokenizer.get_mergeable_ranks()}
-    tokens_offset = len(mergeable_ranks)
-    special_tokens = {name: tokens_offset + i for i, name in enumerate(SPECIAL_TOKENS)}
-    enc = tiktoken.Encoding(
-        name="rustbpe",
-        pat_str=pattern,
-        mergeable_ranks=mergeable_ranks,
-        special_tokens=special_tokens,
-    )
-
-    # Save tokenizer
-    with open(tokenizer_pkl, "wb") as f:
-        pickle.dump(enc, f)
-
-    t1 = time.time()
-    print(f"Tokenizer: trained in {t1 - t0:.1f}s, saved to {tokenizer_pkl}")
-
-    # --- Build token_bytes lookup for BPB evaluation ---
-    print("Tokenizer: building token_bytes lookup...")
-    special_set = set(SPECIAL_TOKENS)
-    token_bytes_list = []
-    for token_id in range(enc.n_vocab):
-        token_str = enc.decode([token_id])
-        if token_str in special_set:
-            token_bytes_list.append(0)
-        else:
-            token_bytes_list.append(len(token_str.encode("utf-8")))
-    token_bytes_tensor = torch.tensor(token_bytes_list, dtype=torch.int32)
-    torch.save(token_bytes_tensor, token_bytes_path)
-    print(f"Tokenizer: saved token_bytes to {token_bytes_path}")
-
-    # Sanity check
-    test = "Hello world! Numbers: 123. Unicode: 你好"
-    encoded = enc.encode_ordinary(test)
-    decoded = enc.decode(encoded)
-    assert decoded == test, f"Tokenizer roundtrip failed: {test!r} -> {decoded!r}"
-    print(f"Tokenizer: sanity check passed (vocab_size={enc.n_vocab})")
+    print("Done!")
 
 # ---------------------------------------------------------------------------
 # Runtime utilities (imported by train.py)
 # ---------------------------------------------------------------------------
 
-class Tokenizer:
-    """Minimal tokenizer wrapper. Training is handled above."""
-
-    def __init__(self, enc):
-        self.enc = enc
-        self.bos_token_id = enc.encode_single_token(BOS_TOKEN)
-
-    @classmethod
-    def from_directory(cls, tokenizer_dir=TOKENIZER_DIR):
-        with open(os.path.join(tokenizer_dir, "tokenizer.pkl"), "rb") as f:
-            enc = pickle.load(f)
-        return cls(enc)
-
-    def get_vocab_size(self):
-        return self.enc.n_vocab
-
-    def get_bos_token_id(self):
-        return self.bos_token_id
-
-    def encode(self, text, prepend=None, num_threads=8):
-        if prepend is not None:
-            prepend_id = prepend if isinstance(prepend, int) else self.enc.encode_single_token(prepend)
-        if isinstance(text, str):
-            ids = self.enc.encode_ordinary(text)
-            if prepend is not None:
-                ids.insert(0, prepend_id)
-        elif isinstance(text, list):
-            ids = self.enc.encode_ordinary_batch(text, num_threads=num_threads)
-            if prepend is not None:
-                for row in ids:
-                    row.insert(0, prepend_id)
-        else:
-            raise ValueError(f"Invalid input type: {type(text)}")
-        return ids
-
-    def decode(self, ids):
-        return self.enc.decode(ids)
+def load_sequences(path):
+    """Load a .pt data file -> (N, SEQUENCE_SIZE) long tensor."""
+    data = torch.load(path, map_location="cpu", weights_only=True)
+    bs = data['batch_size']
+    ss = data['sequence_size']
+    parts = []
+    for chunk, valid in zip(data['chunks'], data['valid_counts']):
+        parts.append(chunk.reshape(bs, ss)[:valid])
+    return torch.cat(parts, dim=0).long()
 
 
-def get_token_bytes(device="cpu"):
-    path = os.path.join(TOKENIZER_DIR, "token_bytes.pt")
-    with open(path, "rb") as f:
-        return torch.load(f, map_location=device)
-
-
-def _document_batches(split, tokenizer_batch_size=128):
-    """Infinite iterator over document batches from parquet files."""
-    parquet_paths = list_parquet_files()
-    assert len(parquet_paths) > 0, "No parquet files found. Run prepare.py first."
-    val_path = os.path.join(DATA_DIR, VAL_FILENAME)
-    if split == "train":
-        parquet_paths = [p for p in parquet_paths if p != val_path]
-        assert len(parquet_paths) > 0, "No training shards found."
-    else:
-        parquet_paths = [val_path]
+def make_dataloader(source, batch_size):
+    """
+    Infinite dataloader -> (inputs, targets, epoch) on GPU.
+    source: "train", "val", or path to a .pt file.
+    """
+    if source in ("train", "val"):
+        fname = "fineweb_val.pt" if source == "val" else "fineweb_train.pt"
+        source = os.path.join(DATA_DIR, fname)
+    sequences = load_sequences(source)
+    n = len(sequences)
     epoch = 1
     while True:
-        for filepath in parquet_paths:
-            pf = pq.ParquetFile(filepath)
-            for rg_idx in range(pf.num_row_groups):
-                rg = pf.read_row_group(rg_idx)
-                batch = rg.column('text').to_pylist()
-                for i in range(0, len(batch), tokenizer_batch_size):
-                    yield batch[i:i+tokenizer_batch_size], epoch
+        perm = torch.randperm(n)
+        for i in range(0, n - batch_size + 1, batch_size):
+            batch = sequences[perm[i:i + batch_size]].cuda()
+            yield batch[:, :-1], batch[:, 1:], epoch
         epoch += 1
 
 
-def make_dataloader(tokenizer, B, T, split, buffer_size=1000):
-    """
-    BOS-aligned dataloader with best-fit packing.
-    Every row starts with BOS. Documents packed using best-fit to minimize cropping.
-    When no document fits remaining space, crops shortest doc to fill exactly.
-    100% utilization (no padding).
-    """
-    assert split in ["train", "val"]
-    row_capacity = T + 1
-    batches = _document_batches(split)
-    bos_token = tokenizer.get_bos_token_id()
-    doc_buffer = []
-    epoch = 1
-
-    def refill_buffer():
-        nonlocal epoch
-        doc_batch, epoch = next(batches)
-        token_lists = tokenizer.encode(doc_batch, prepend=bos_token)
-        doc_buffer.extend(token_lists)
-
-    # Pre-allocate buffers: [inputs (B*T) | targets (B*T)]
-    row_buffer = torch.empty((B, row_capacity), dtype=torch.long)
-    cpu_buffer = torch.empty(2 * B * T, dtype=torch.long, pin_memory=True)
-    gpu_buffer = torch.empty(2 * B * T, dtype=torch.long, device="cuda")
-    cpu_inputs = cpu_buffer[:B * T].view(B, T)
-    cpu_targets = cpu_buffer[B * T:].view(B, T)
-    inputs = gpu_buffer[:B * T].view(B, T)
-    targets = gpu_buffer[B * T:].view(B, T)
-
-    while True:
-        for row_idx in range(B):
-            pos = 0
-            while pos < row_capacity:
-                while len(doc_buffer) < buffer_size:
-                    refill_buffer()
-
-                remaining = row_capacity - pos
-
-                # Find largest doc that fits entirely
-                best_idx = -1
-                best_len = 0
-                for i, doc in enumerate(doc_buffer):
-                    doc_len = len(doc)
-                    if doc_len <= remaining and doc_len > best_len:
-                        best_idx = i
-                        best_len = doc_len
-
-                if best_idx >= 0:
-                    doc = doc_buffer.pop(best_idx)
-                    row_buffer[row_idx, pos:pos + len(doc)] = torch.tensor(doc, dtype=torch.long)
-                    pos += len(doc)
-                else:
-                    # No doc fits — crop shortest to fill remaining
-                    shortest_idx = min(range(len(doc_buffer)), key=lambda i: len(doc_buffer[i]))
-                    doc = doc_buffer.pop(shortest_idx)
-                    row_buffer[row_idx, pos:pos + remaining] = torch.tensor(doc[:remaining], dtype=torch.long)
-                    pos += remaining
-
-        cpu_inputs.copy_(row_buffer[:, :-1])
-        cpu_targets.copy_(row_buffer[:, 1:])
-        gpu_buffer.copy_(cpu_buffer, non_blocking=True)
-        yield inputs, targets, epoch
-
-# ---------------------------------------------------------------------------
-# Evaluation (DO NOT CHANGE — this is the fixed metric)
-# ---------------------------------------------------------------------------
-
 @torch.no_grad()
-def evaluate_bpb(model, tokenizer, batch_size):
+def evaluate_val_loss(model, batch_size):
     """
-    Bits per byte (BPB): vocab size-independent evaluation metric.
-    Sums per-token cross-entropy (in nats), sums target byte lengths,
-    then converts nats/byte to bits/byte. Special tokens (byte length 0)
-    are excluded from both sums.
-    Uses fixed MAX_SEQ_LEN so results are comparable across configs.
+    Mean cross-entropy loss on the fixed validation set (= log PPL).
+    This is the sole data-run metric. DO NOT MODIFY.
     """
-    token_bytes = get_token_bytes(device="cuda")
-    val_loader = make_dataloader(tokenizer, batch_size, MAX_SEQ_LEN, "val")
-    steps = EVAL_TOKENS // (batch_size * MAX_SEQ_LEN)
-    total_nats = 0.0
-    total_bytes = 0
-    for _ in range(steps):
-        x, y, _ = next(val_loader)
-        loss_flat = model(x, y, reduction='none').view(-1)
-        y_flat = y.view(-1)
-        nbytes = token_bytes[y_flat]
-        mask = nbytes > 0
-        total_nats += (loss_flat * mask).sum().item()
-        total_bytes += nbytes.sum().item()
-    return total_nats / (math.log(2) * total_bytes)
+    sequences = load_sequences(os.path.join(DATA_DIR, "fineweb_val.pt"))
+    n = len(sequences)
+    total_loss = 0.0
+    total_tokens = 0
+    was_training = model.training
+    model.eval()
+    with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+        for i in range(0, n - batch_size + 1, batch_size):
+            batch = sequences[i:i + batch_size].cuda()
+            x, y = batch[:, :-1], batch[:, 1:]
+            logits = model(x)
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.reshape(-1),
+                                   reduction='sum')
+            total_loss += loss.item()
+            total_tokens += y.numel()
+    if was_training:
+        model.train()
+    return total_loss / total_tokens
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Prepare data and tokenizer for autoresearch")
-    parser.add_argument("--num-shards", type=int, default=10, help="Number of training shards to download (-1 = all). Val shard is always pinned.")
-    parser.add_argument("--download-workers", type=int, default=8, help="Number of parallel download workers")
+    parser = argparse.ArgumentParser(description="Prepare FineWeb data for data-run")
+    parser.add_argument("--train_tokens", type=int, default=100_000_000)
+    parser.add_argument("--val_tokens", type=int, default=10_000_000)
     args = parser.parse_args()
-
-    num_shards = MAX_SHARD if args.num_shards == -1 else args.num_shards
-
-    print(f"Cache directory: {CACHE_DIR}")
-    print()
-
-    # Step 1: Download data
-    download_data(num_shards, download_workers=args.download_workers)
-    print()
-
-    # Step 2: Train tokenizer
-    train_tokenizer()
-    print()
-    print("Done! Ready to train.")
+    prepare_data(args.train_tokens, args.val_tokens)
