@@ -1,4 +1,4 @@
-# data-run
+# NanoGPT Data-Run
 
 A data efficiency benchmark for language model training. Same eval as [slowrun](https://github.com/qlabs-eng/slowrun), but the competition is about **data quality**: how few training tokens can you use to reach a target validation loss?
 
