@@ -13,6 +13,13 @@ data/
 # Lock file
 uv.lock
 
+# Logs
+*.log
+
+# Experiment scripts
+run_subset.py
+subsample.py
+
 # Agent prompt files
 CLAUDE.md
 AGENTS.md
