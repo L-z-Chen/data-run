@@ -12,7 +12,7 @@ A data efficiency benchmark for language model training. Same eval as [slowrun](
 - **Score**: **Number of unique training tokens** used to reach the target (lower is better)
 - **Loss function**: Standard cross-entropy, same as [slowrun](https://github.com/qlabs-eng/slowrun)/[modded-nanogpt](https://github.com/KellerJordan/modded-nanogpt)/[nanogpt](https://github.com/karpathy/nanoGPT)/[nanochat](https://github.com/karpathy/nanochat)
 
-> **Note:** Training for multiple epochs does NOT increase your token count. If your dataset has 1M tokens and you train for 100 epochs, your score is still 1M. The score is purely the size of your training data.
+> **Note:** Training for multiple epochs does NOT increase your token count. If your dataset has 1M tokens and you train for 100 epochs, your token amount is still 1M. The token amount is purely the size of your training data.
 
 ### What you CAN do
 
